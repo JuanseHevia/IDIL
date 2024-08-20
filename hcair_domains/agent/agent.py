@@ -119,18 +119,29 @@ class AIAgent_Abstract(SimulatorAgent):
     'tup_actions: tuple of actions'
 
     mdp = self.agent_model.get_reference_mdp()  # type: LatentMDP
-    sidx_cur = mdp.conv_sim_states_to_mdp_sidx(tup_cur_state)
-    sidx_nxt = mdp.conv_sim_states_to_mdp_sidx(tup_nxt_state)
+    if tup_cur_state is None:
+      sidx_cur = None
+    else:
+      sidx_cur = mdp.conv_sim_states_to_mdp_sidx(tup_cur_state)
 
-    list_aidx = []
-    for idx, act in enumerate(tup_actions):
-      if act is None:
-        list_aidx.append(None)
-      else:
-        list_aidx.append(mdp.dict_factored_actionspace[idx].action_to_idx[act])
+    if tup_nxt_state is None:
+      sidx_nxt = None
+    else:
+      sidx_nxt = mdp.conv_sim_states_to_mdp_sidx(tup_nxt_state)
 
-    self.agent_model.update_mental_state_idx(sidx_cur, tuple(list_aidx),
-                                             sidx_nxt)
+    if tup_actions is None:
+      tup_aidx = None
+    else:
+      list_aidx = []
+      for idx, act in enumerate(tup_actions):
+        if act is None:
+          list_aidx.append(None)
+        else:
+          list_aidx.append(
+              mdp.dict_factored_actionspace[idx].action_to_idx[act])
+      tup_aidx = tuple(list_aidx)
+
+    self.agent_model.update_mental_state_idx(sidx_cur, tup_aidx, sidx_nxt)
 
   def set_latent(self, latent):
     xidx = self.conv_latent_to_idx(latent)

@@ -33,7 +33,6 @@ class AM_CleanupSingle(AgentModel):
                               obstate_next_idx: int) -> np.ndarray:
     mdp = self.get_reference_mdp()  # type: MDPCleanupSingle
 
-    box_state_cur, _ = mdp.conv_mdp_sidx_to_sim_states(obstate_idx)
     box_state_nxt, pos = mdp.conv_mdp_sidx_to_sim_states(obstate_next_idx)
 
     num_drops = len(mdp.drops)
@@ -49,14 +48,16 @@ class AM_CleanupSingle(AgentModel):
           floor_boxes.append(idx)
       return holding_box, floor_boxes
 
-    holding_box_cur, _ = get_holding_box(box_state_cur)
+    # holding_box_cur, _ = get_holding_box(box_state_cur)
     holding_box_nxt, floor_boxes = get_holding_box(box_state_nxt)
 
-    has_picked_up = holding_box_cur < 0 and holding_box_nxt >= 0
-    has_dropped = holding_box_cur >= 0 and holding_box_nxt < 0
+    latent = self.policy_model.conv_idx_to_latent(latstate_idx)
+
+    has_box = holding_box_nxt >= 0
+    has_dropped = latent[0] == "goal" and holding_box_nxt < 0
     num_floor_boxes = len(floor_boxes)
     np_Tx = np.zeros(self.policy_model.get_num_latent_states())
-    if has_picked_up:
+    if has_box:
       xidx = self.policy_model.conv_latent_to_idx(("goal", 0))
       np_Tx[xidx] = 1
       return np_Tx

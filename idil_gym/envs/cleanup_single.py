@@ -1,7 +1,12 @@
+import numpy as np
 from idil_gym.envs.mdp_env.env_from_mdp import EnvFromMDP
 from hcair_domains.cleanup_single.mdp import MDPCleanupSingle
 from hcair_domains.cleanup_single.maps import MAP_SINGLE_V1
+from hcair_domains.cleanup_single.policy import Policy_CleanupSingle
+from hcair_domains.cleanup_single.agent import Agent_CleanupSingle
+import gym
 import argparse
+
 
 class CleanupSingleEnv_v0(EnvFromMDP):
 
@@ -28,12 +33,38 @@ class CleanupSingleEnv_v0(EnvFromMDP):
     super().__init__(mdp, possible_init_states, use_central_action=True)
 
 
+class CleanupSingleExpert:
+
+  def __init__(self, temperature) -> None:
+    mdp_task = MDPCleanupSingle(**MAP_SINGLE_V1)
+    policy = Policy_CleanupSingle(mdp_task, temperature)
+    self.agent = Agent_CleanupSingle(policy)
+
+    self.PREV_LATNET = mdp_task.num_latents
+
+    print(mdp_task.num_latents)
+    print(mdp_task.num_states)
+
+  def choose_action(self, state, prev_option, prev_action, sample=True):
+    mdp = self.agent.agent_model.get_reference_mdp()
+    sim_state = mdp.conv_mdp_sidx_to_sim_states(state)
+
+    if prev_option == self.PREV_LATNET:
+      self.agent.init_latent(sim_state)
+    else:
+      prev_latent = self.agent.conv_idx_to_latent(prev_option)
+      self.agent.set_latent(prev_latent)
+      self.agent.update_mental_state(None, (None, ), sim_state)
+
+    latent = self.agent.agent_model.current_latent
+    sim_action = self.agent.get_action(sim_state)
+    action = self.agent.agent_model.policy_model.conv_action_to_idx(
+        (sim_action, ))[0]
+
+    return latent, action
+
+
 if __name__ == "__main__":
-  from hcair_domains.cleanup_single.simulator import CleanupSingleSimulator
-  from hcair_domains.cleanup_single.maps import MAP_SINGLE_V1
-  from hcair_domains.cleanup_single.policy import Policy_CleanupSingle
-  from hcair_domains.cleanup_single.mdp import MDPCleanupSingle
-  from hcair_domains.cleanup_single.agent import Agent_CleanupSingle
   from collections import defaultdict
   import os
   import pickle
@@ -44,18 +75,11 @@ if __name__ == "__main__":
   parser.add_argument("--temperature", type=float, default=0.3, required=False)
   args = parser.parse_args()
 
-  sim = CleanupSingleSimulator()
+  env = gym.make("CleanupSingle-v0")
+
+  # expert agent (if you want to test any trained agent, load it here)
   TEMPERATURE = args.temperature if args.temperature is not None else 0.3
-  GAME_MAP = MAP_SINGLE_V1
-  mdp_task = MDPCleanupSingle(**GAME_MAP)
-  policy = Policy_CleanupSingle(mdp_task, TEMPERATURE)
-  agent = Agent_CleanupSingle(policy)
-
-  sim.init_game(**GAME_MAP)
-  sim.set_autonomous_agent(agent)
-
-  print(mdp_task.num_latents)
-  print(mdp_task.num_states)
+  agent = CleanupSingleExpert(TEMPERATURE)
 
   # generate data
   ############################################################################
@@ -65,32 +89,33 @@ if __name__ == "__main__":
 
   expert_trajs = defaultdict(list)
   for idx in range(num_data):
-    while not sim.is_finished():
-      map_agent_2_action = sim.get_joint_action()
-      sim.take_a_step(map_agent_2_action)
+    state = env.reset()
 
     s_array = []
     a_array = []
     r_array = []
     x_array = []
-    for _, bstt, a_pos, a_act, a_lat, scr in sim.history:
-      sidx = mdp_task.conv_sim_states_to_mdp_sidx((bstt, a_pos))
-      aidx = mdp_task.conv_sim_actions_to_mdp_aidx((a_act, ))
-      xidx = agent.conv_latent_to_idx(a_lat)
-      s_array.append(sidx)
-      a_array.append(aidx)
-      r_array.append(-1)
-      x_array.append(xidx)
+    prev_latent = agent.PREV_LATNET
+    done = False
+    while not done:
+      latent, action = agent.choose_action(state,
+                                           prev_latent,
+                                           None,
+                                           sample=False)
+      next_state, reward, done, info = env.step(action)
+      s_array.append(state)
+      a_array.append(action)
+      r_array.append(reward)
+      x_array.append(latent)
 
-    sidx = mdp_task.conv_sim_states_to_mdp_sidx(
-        (sim.box_states, sim.agent_pos))
-    s_array.append(sidx)
+      state = next_state
+      prev_latent = latent
+
+    s_array.append(state)
 
     length = len(r_array)
     dones = [False] * length
-    dones[-1] = sim.check_task_done()
-
-    sim.reset_game()
+    dones[-1] = done
 
     expert_trajs["states"].append(s_array[:-1])
     expert_trajs["next_states"].append(s_array[1:])
@@ -100,6 +125,8 @@ if __name__ == "__main__":
     expert_trajs["dones"].append(dones)
     expert_trajs["lengths"].append(length)
 
+  rewards = [sum(r_arr) for r_arr in expert_trajs["rewards"]]
+  print("mean reward:", np.mean(rewards))
   file_path = os.path.join(save_dir, f"CleanupSingle-v0_{num_data}.pkl")
   with open(file_path, 'wb') as f:
     pickle.dump(expert_trajs, f)
