@@ -1,0 +1,9 @@
+{
+        "microwave": 0,
+        "kettle": 1,
+        "light switch": 2,
+        "slide cabinet": 3,
+        "bottom burner": 4,
+        "top burner": 5,
+        "hinge cabinet": 6
+}

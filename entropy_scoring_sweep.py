@@ -4,7 +4,9 @@ from ulid import ULID
 import numpy as np
 
 COMMAND_STR_TEMPLATE = '''
-python idil_train/run_algs.py alg={alg} base={base} env={env} seed={seed} supervision={supervision} k={kval} entropy_scoring=true tag='{tag}'
+python idil_train/run_algs.py alg={alg} base={base} env={env} seed={seed} supervision={supervision} 
+    k={kval} entropy_scoring=true tag='{tag}' fixed_pi={fixed_pi} randomize={randomize}
+    demo_latent_infer_interval=2.5e4
 '''
 
 if __name__ == "__main__":
@@ -25,7 +27,11 @@ if __name__ == "__main__":
                         help="Environment to run the algorithm on")
     parser.add_argument("--custom_tag", type=str, required=False,
                         help="Custom tag for the experiment, appended to the standard ID")
-    
+    parser.add_argument("--fixed_pi", type=bool, default=False, required=False,
+                        help="Whether to use a fixed action policy (expert)")
+    parser.add_argument("--randomize", type=bool, default=False, required=False,
+                        help="Whether to randomize the top-K selection of trajectories, used for benchmarking") 
+
     args = parser.parse_args()
     sweep_k_list = args.sweep_k.split(";")
 
@@ -33,6 +39,13 @@ if __name__ == "__main__":
 
     print(f"Gotten sweep Ks: {sweep_k_list}")
 
+    assert isinstance(args.fixed_pi, bool), "fixed_pi must be a boolean"
+    assert isinstance(args.randomize, bool), "randomize must be a boolean"
+    
+    print(f"Starting sweep with {args.num_trials} trials for each K value")
+    print(f"Using supervision ratio: {args.supervision}")
+    print(f"Using fixed expert micro policy? {args.fixed_pi}")
+    print(f"Randomize top-K selection? {args.randomize}")
 
     for sweep_k in sweep_k_list:
         for trial_id in range(args.num_trials):
@@ -56,7 +69,9 @@ if __name__ == "__main__":
                                                     supervision=args.supervision,
                                                     env_type=env_type,
                                                     kval=sweep_k, 
-                                                    tag=tag)
+                                                    tag=tag,
+                                                    fixed_pi=args.fixed_pi,
+                                                    randomize=args.randomize)
             
             print(f"\n\nRunning command: {command_str}\n\n")
             subprocess.run(command_str, shell=True)
